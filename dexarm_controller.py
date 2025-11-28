@@ -28,7 +28,7 @@ class DexArmController:
         self.settings = {
             'suction_grab_delay': 0.5,
             'suction_release_delay': 0.3,
-            'feedrate': 2000,  # Standard feedrate from pydexarm
+            'feedrate': 3000,  # 1.5x standard feedrate
         }
     
     @staticmethod
@@ -55,16 +55,24 @@ class DexArmController:
         self.connected = False
     
     def send_command(self, cmd, wait_ok=True):
-        """Send G-code command and optionally wait for 'ok'"""
+        """Send G-code command and wait for 'ok' (like official pydexarm)"""
         if not self.serial or not self.connected:
             return None
         
         try:
-            self.serial.write(f"{cmd}\n".encode())
-            if wait_ok:
+            self.serial.write(f"{cmd}\r".encode())
+            if not wait_ok:
+                self.serial.reset_input_buffer()
+                return "sent"
+            
+            # Wait for 'ok' response (loop like official pydexarm)
+            while True:
                 response = self.serial.readline().decode().strip()
-                return response
-            return "sent"
+                if 'ok' in response.lower():
+                    return response
+                # Timeout protection
+                if not response:
+                    time.sleep(0.05)
         except Exception as e:
             return f"Error: {e}"
     
@@ -210,9 +218,10 @@ class DexArmController:
         time.sleep(self.settings['suction_grab_delay'])
     
     def suction_release(self):
-        """Release suction (pump out) - M1001 per official API"""
-        self.send_command("M1001")
+        """Release suction - M1002 releases air pressure, then M1003 stops pump"""
+        self.send_command("M1002")  # Release air
         time.sleep(self.settings['suction_release_delay'])
+        self.send_command("M1003")  # Stop pump
     
     def suction_off(self):
         """Turn off suction pump"""
@@ -328,12 +337,8 @@ class DexArmController:
     
     def wait_for_move(self):
         """Wait for arm to finish moving"""
-        # Send M400 to wait for moves to complete
+        # M400 waits for all moves to complete, send_command waits for 'ok'
         self.send_command("M400")
-        time.sleep(0.1)
-        # Drain buffer
-        while self.serial.in_waiting:
-            self.serial.readline()
     
     def pick_blade(self, callback=None):
         """Pick a blade using pure Cartesian (like official pydexarm)"""
@@ -353,18 +358,22 @@ class DexArmController:
         self.send_command(f"G1 F{f} X{pick['x']:.2f} Y{pick['y']:.2f} Z{safe_z:.2f}")
         self.wait_for_move()
         
-        # 2. Lower to pick (same X,Y, just Z)
+        # 2. Start suction BEFORE lowering
+        if callback:
+            callback("  ✓ Suction ON")
+        self.send_command("M1000")
+        time.sleep(0.3)
+        
+        # 3. Lower to pick (same X,Y, just Z)
         if callback:
             callback("  ↓ Lowering")
         self.send_command(f"G1 F{f} Z{pick['z']:.2f}")
         self.wait_for_move()
         
-        # 3. Grab
-        if callback:
-            callback("  ✓ Grabbing")
-        self.suction_grab()
+        # 4. Wait for suction to grip
+        time.sleep(self.settings['suction_grab_delay'])
         
-        # 4. Lift back up (same X,Y, safe_z)
+        # 5. Lift back up (same X,Y, safe_z)
         if callback:
             callback("  ↑ Lifting")
         self.send_command(f"G1 F{f} Z{safe_z:.2f}")
@@ -396,10 +405,16 @@ class DexArmController:
         self.send_command(f"G1 F{f} Z{hook['z']:.2f}")
         self.wait_for_move()
         
-        # 3. Release
+        # 3. Release suction BEFORE lifting
         if callback:
-            callback("  ✓ Releasing")
-        self.suction_release()
+            callback("  ✓ Release air")
+        self.send_command("M1002")  # Release air pressure
+        time.sleep(0.5)  # Wait for air to release
+        
+        if callback:
+            callback("  ✓ Pump OFF")
+        self.send_command("M1003")  # Stop pump
+        time.sleep(0.2)
         
         # 4. Lift back up (same X,Y, safe_z)
         if callback:
