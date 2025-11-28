@@ -116,12 +116,15 @@ class BladeLoaderGUI:
         
         hook_btns = ttk.Frame(hooks_frame)
         hook_btns.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 0))
-        ttk.Button(hook_btns, text="Add Hook", width=10, command=self.add_hook).pack(pady=3)
-        ttk.Button(hook_btns, text="Go To", width=10, command=self.go_to_hook).pack(pady=3)
-        ttk.Button(hook_btns, text="Test Hook", width=10, command=self.test_hook).pack(pady=3)
-        ttk.Separator(hook_btns, orient='horizontal').pack(fill=tk.X, pady=10)
-        ttk.Button(hook_btns, text="Delete", width=10, command=self.delete_hook).pack(pady=3)
-        ttk.Button(hook_btns, text="Clear All", width=10, command=self.clear_hooks).pack(pady=3)
+        self.train_hook_btn = ttk.Button(hook_btns, text="🎯 Train Hook", width=12, command=self.train_hook_mode)
+        self.train_hook_btn.pack(pady=3)
+        ttk.Button(hook_btns, text="Add Hook", width=12, command=self.add_hook).pack(pady=3)
+        ttk.Separator(hook_btns, orient='horizontal').pack(fill=tk.X, pady=5)
+        ttk.Button(hook_btns, text="Go To", width=12, command=self.go_to_hook).pack(pady=3)
+        ttk.Button(hook_btns, text="Test Hook", width=12, command=self.test_hook).pack(pady=3)
+        ttk.Separator(hook_btns, orient='horizontal').pack(fill=tk.X, pady=5)
+        ttk.Button(hook_btns, text="Delete", width=12, command=self.delete_hook).pack(pady=3)
+        ttk.Button(hook_btns, text="Clear All", width=12, command=self.clear_hooks).pack(pady=3)
         
         # === ROW 4: RUN + LOG ===
         row4 = ttk.Frame(main)
@@ -281,14 +284,36 @@ class BladeLoaderGUI:
         self.refresh_display()
     
     # === HOOKS ===
+    def train_hook_mode(self):
+        """Enable hook training: suction ON + free move"""
+        if not self.controller.connected:
+            return
+        
+        if self.teach_mode_on:
+            # Already in teach mode, turn off suction and exit
+            self.controller.suction_off()
+            self.toggle_teach_mode()
+            self.train_hook_btn.config(text="🎯 Train Hook")
+            self.log("Hook training OFF")
+        else:
+            # Enter hook training: suction ON then free move
+            self.controller.suction_grab()
+            self.log("Suction ON - grab a blade")
+            self.toggle_teach_mode()
+            self.train_hook_btn.config(text="🔒 Lock & OFF")
+            self.log("Position blade on hook, then click Add Hook")
+    
     def add_hook(self):
         if not self.controller.connected:
             return
         if self.teach_mode_on:
             self.toggle_teach_mode()
+            self.train_hook_btn.config(text="🎯 Train Hook")
+        # Turn off suction after adding hook
+        self.controller.suction_off()
         idx = self.controller.add_hook()
         self.refresh_display()
-        self.log(f"Hook {idx} added!")
+        self.log(f"Hook {idx} added! Suction OFF")
     
     def go_to_hook(self):
         if not self.controller.connected:
