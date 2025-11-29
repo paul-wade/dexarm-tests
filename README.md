@@ -2,6 +2,8 @@
 
 A teach-and-replay pick-and-place system for loading razor blades onto coating racks using the Rotrics DexArm robot arm.
 
+![Blade Loader GUI](image.png)
+
 ## Setup
 
 1. Install Python 3.8+ if not already installed
